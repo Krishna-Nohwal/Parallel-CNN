@@ -151,9 +151,9 @@ void fp_preact_c1(const float input[28][28], float preact[6][24][24], const floa
     int S = 6 * 24 * 24;
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
-    for (int i = start; i < end; ++i) {
+    for (int i = 0; i < S; ++i) {
         placeHolder[i] = 0;
         result[i] = 0;
     }
@@ -170,11 +170,8 @@ void fp_preact_c1(const float input[28][28], float preact[6][24][24], const floa
         }
         placeHolder[l] += sum;
     }
-    int size = end - start;
-    MPI_Reduce(placeHolder, result, size, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor62424(preact, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor62424(preact, result);
 }
 
 
@@ -192,7 +189,7 @@ void fp_bias_c1(float preact[6][24][24], const float bias[6]) {
 
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     for (int l = 0; l < S; ++l) {
         placeHolder[l] = 0;
@@ -206,10 +203,8 @@ void fp_bias_c1(float preact[6][24][24], const float bias[6]) {
         placeHolder[l] = preact[m][x][y] + bias[m];
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor62424(preact, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor62424(preact, result);
 }
 
 void fp_preact_s1(const float input[6][24][24], float preact[6][6][6], const float weight[1][4][4]) {
@@ -226,7 +221,7 @@ void fp_preact_s1(const float input[6][24][24], float preact[6][6][6], const flo
 
     int it = ceil(6*6*6/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     for (int i = 0; i < S; ++i) {
         placeHolder[i] = 0;
@@ -246,10 +241,8 @@ void fp_preact_s1(const float input[6][24][24], float preact[6][6][6], const flo
         placeHolder[l] += sum;
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor666(preact, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor666(preact, result);
 }
 
 void fp_bias_s1(float preact[6][6][6], const float bias[1]) {
@@ -263,7 +256,7 @@ void fp_bias_s1(float preact[6][6][6], const float bias[1]) {
     int S = 6 * 6 * 6;
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     float placeHolder[S];
     float result[S];
@@ -276,13 +269,11 @@ void fp_bias_s1(float preact[6][6][6], const float bias[1]) {
         int m = l / (6 * 6);
         int j = (l / 6) % 6;
         int k = l % 6;
-        placeHolder[l] = preact[m][j][k] + bias[m];
+        placeHolder[l] = preact[m][j][k] + bias[0];
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor666(preact, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor666(preact, result);
 }
 
 
@@ -299,7 +290,7 @@ void fp_preact_f(const float input[6][6][6], float preact[10], const float weigh
     
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     for (int i = 0; i < S; ++i) {
         placeHolder[i] = 0;
@@ -307,7 +298,7 @@ void fp_preact_f(const float input[6][6][6], float preact[10], const float weigh
 
     it = ceil(10 * 6 * 6 * 6/(float)p);
     start = r * it;
-    end = Min(r * (it + 1), 10 * 6 * 6 * 6);
+    end = Min(start + it, 10 * 6 * 6 * 6);
     
     for (int i = start; i < end; ++i) {
         int m = i / (6 * 6 * 6);
@@ -317,7 +308,7 @@ void fp_preact_f(const float input[6][6][6], float preact[10], const float weigh
         placeHolder[m] += weight[m][j][k][l] * input[j][k][l];
     }
 
-    MPI_Reduce(placeHolder, preact, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Allreduce(placeHolder, preact, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
 }
 
 
@@ -334,13 +325,14 @@ void fp_bias_f(float preact[10], const float bias[10]) {
 
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
+    for (int i = 0; i < S; ++i) placeHolder[i] = 0;
     for (int i = start; i < end; ++i) {
         placeHolder[i] = preact[i] + bias[i];
     }
 
-    MPI_Reduce(placeHolder, preact, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Allreduce(placeHolder, preact, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
 }
 
 
@@ -357,7 +349,7 @@ void bp_weight_f(float d_weight[10][6][6][6], const float d_preact[10], const fl
 
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     for (int i = 0; i < S; ++i) {
         placeHolder[i] = 0;
@@ -372,11 +364,8 @@ void bp_weight_f(float d_weight[10][6][6][6], const float d_preact[10], const fl
         placeHolder[i] = d_preact[m] * p_output[j][k][l];
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        for (int i = 0; i < 9; i++)
-            buildTensor666(d_weight[i], result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    memcpy(d_weight, result, sizeof(float) * S);
 }
 
 void bp_bias_f(float bias[10], const float d_preact[10]) {
@@ -391,7 +380,7 @@ void bp_bias_f(float bias[10], const float d_preact[10]) {
 
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     for (int i = 0; i < S; ++i) {
         placeHolder[i] = 0;
@@ -401,10 +390,8 @@ void bp_bias_f(float bias[10], const float d_preact[10]) {
         placeHolder[i] = bias[i] + dt * d_preact[i];
     }
 
-    MPI_Reduce(placeHolder, bias, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Allreduce(placeHolder, bias, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
 }
-
-#endif /* LAYER_H */
 
 void bp_output_s1(float d_output[6][6][6], const float n_weight[10][6][6][6], const float nd_preact[10]) {
     int p;
@@ -416,19 +403,19 @@ void bp_output_s1(float d_output[6][6][6], const float n_weight[10][6][6][6], co
     int S = 6 * 6 * 6;
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     float placeHolder[S];
     float result[S];
 
-    for (int l = start; l < end; ++l) {
+    for (int l = 0; l < S; ++l) {
         placeHolder[l] = 0;
         result[l] = 0;
     }
 
     it = ceil(10 * S/(float)p);
     start = r * it;
-    end = Min(r * (it + 1), 10 * S);
+    end = Min(start + it, 10 * S);
 
     for (int i = start; i < end; ++i) {
         int i1 = i / (6 * 6 * 6);
@@ -438,10 +425,8 @@ void bp_output_s1(float d_output[6][6][6], const float n_weight[10][6][6][6], co
         placeHolder[i % (6 * 6 * 6)] += n_weight[i1][i2][i3][i4] * nd_preact[i1];
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor666(d_output, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor666(d_output, result);
 }
 
 
@@ -455,7 +440,7 @@ void bp_preact_s1(float d_preact[6][6][6], const float d_output[6][6][6], const 
     int S = 6 * 6 * 6;
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     float placeHolder[S];
     float result[S];
@@ -473,10 +458,8 @@ void bp_preact_s1(float d_preact[6][6][6], const float d_output[6][6][6], const 
         placeHolder[l] = d_output[m][j][k] * o * (1 - o);;
     }
 
-     MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor666(d_preact, result);
-    }
+     MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor666(d_preact, result);
 }
 
 void bp_weight_s1(float d_weight[1][4][4], const float d_preact[6][6][6], const float p_output[6][24][24]) {
@@ -489,7 +472,7 @@ void bp_weight_s1(float d_weight[1][4][4], const float d_preact[6][6][6], const 
     int S = 4 * 4;
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     float placeHolder[S];
     float result[S];
@@ -502,9 +485,9 @@ void bp_weight_s1(float d_weight[1][4][4], const float d_preact[6][6][6], const 
 
     it = ceil(4 * 4 * 6 * 6 * 6/(float)p);
     start = r * it;
-    end = Min(r * (it + 1), 4 * 4 * 6 * 6 * 6);
+    end = Min(start + it, 4 * 4 * 6 * 6 * 6);
 
-    for (int i = 0; i < 4 * 4 * 6 * 6 * 6; ++i) {
+    for (int i = start; i < end; ++i) {
         int i2 = i / (4 * 6 * 6 * 6);
         int i3 = (i / (6 * 6 * 6)) % 4;
         int i4 = (i / (6 * 6)) % 6;
@@ -513,10 +496,8 @@ void bp_weight_s1(float d_weight[1][4][4], const float d_preact[6][6][6], const 
         placeHolder[i2 * 4 + i3] += d_preact[i4][i5][i6] * p_output[i4][i5 * 4 + i2][i6 * 4 + i3];
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor144(d_weight, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor144(d_weight, result);
 }
 
 float bp_bias_s1(float bias[1], const float d_preact[6][6][6]) {
@@ -529,7 +510,7 @@ float bp_bias_s1(float bias[1], const float d_preact[6][6][6]) {
     int S = 6 * 6 * 6;
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
     float placeHolder = 0.0;
 
@@ -541,8 +522,10 @@ float bp_bias_s1(float bias[1], const float d_preact[6][6][6]) {
         sum += d_preact[m][j][k];
     }
 
-    placeHolder += dt * sum / S;
-    MPI_Reduce(&placeHolder, &bias[0], 1, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    placeHolder = dt * sum / S;
+    float gradient;
+    MPI_Allreduce(&placeHolder, &gradient, 1, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    bias[0] += gradient;
     return bias[0];
 }
 
@@ -559,16 +542,16 @@ void bp_output_c1(float d_output[6][24][24], const float n_weight[1][4][4], cons
 
     int it = ceil(S/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), S);
+    int end = Min(start + it, S);
 
-    for (int i = start; i < end; ++i) {
+    for (int i = 0; i < S; ++i) {
         placeHolder[i] = 0;
         result[i] = 0;
     }
 
     it = ceil(4 * 4 * 6 * 6 * 6/(float)p);
     start = r * it;
-    end = Min(r * (it + 1), 4 * 4 * 6 * 6 * 6);
+    end = Min(start + it, 4 * 4 * 6 * 6 * 6);
 
     for (int i = start; i < end; ++i) {
         int i1 = i / (4 * 4 * 6 * 6 * 6);
@@ -583,10 +566,8 @@ void bp_output_c1(float d_output[6][24][24], const float n_weight[1][4][4], cons
         placeHolder[i4 * 6 * 24 + x * 24 + y] += n_weight[i1][i2][i3] * nd_preact[i4][i5][i6];
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor62424(d_output, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor62424(d_output, result);
 }
 
 static float sigmoid_derivative(float x) {
@@ -608,7 +589,7 @@ void bp_preact_c1(float d_preact[6][24][24], const float d_output[6][24][24], co
 
     int it = ceil(6 * 24 * 24/(float)p);
     int start = r * it;
-    int end = Min(r * (it + 1), 6 * 24 * 24);
+    int end = Min(start + it, 6 * 24 * 24);
 
     for (int i =0 ; i < S; i++){
         placeHolder[i] = 0;
@@ -619,14 +600,11 @@ void bp_preact_c1(float d_preact[6][24][24], const float d_output[6][24][24], co
         int m = i / (24 * 24);
         int j = (i / 24) % 24;
         int k = i % 24;
-        float o = sigmoid(preact[i][j][k]);
         placeHolder[i] = d_output[m][j][k] * sigmoid_derivative(preact[m][j][k]);
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor62424(d_preact, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor62424(d_preact, result);
 }
 
 void bp_weight_c1(float d_weight[6][5][5], const float d_preact[6][24][24], const float p_output[28][28]) {
@@ -640,67 +618,42 @@ void bp_weight_c1(float d_weight[6][5][5], const float d_preact[6][24][24], cons
     float placeHolder[S];
     float result[S];
 
-    int it = ceil(S/(float)p);
-    int start = r * it;
-    int end = Min(r * (it + 1), S);
+    for (int i = 0; i < S; ++i) placeHolder[i] = result[i] = 0;
 
-    for (int i =0 ; i < S; i++){
-        placeHolder[i] = 0;
-        result[i] = 0;
-    }
-
-    float d = 24.0f * 24.0f;
-
+    int terms = 6 * 5 * 5 * 24 * 24;
+    int it = ceil(terms / (float)p);
+    int start = r * it, end = Min(start + it, terms);
     for (int i = start; i < end; ++i) {
-        int i1 = i / (5 * 5 * 24 * 24);
-        int remainder = i % (5 * 5 * 24 * 24);
-        int i2 = remainder / (5 * 24 * 24);
-        remainder %= (5 * 24 * 24);
-        int i3 = remainder / (24 * 24);
-        remainder %= (24 * 24);
-        int i4 = remainder / 24;
-        int i5 = remainder % 24;
-        placeHolder[i/(24*24)] += d_preact[i1][i4][i5] * p_output[i4 + i2][i5 + i3] / d;
+        int y = i % 24;
+        int x = (i / 24) % 24;
+        int ky = (i / (24 * 24)) % 5;
+        int kx = (i / (5 * 24 * 24)) % 5;
+        int m = i / (25 * 24 * 24);
+        placeHolder[m * 25 + kx * 5 + ky] += d_preact[m][x][y] * p_output[x + kx][y + ky] / (24.0f * 24.0f);
     }
 
-    MPI_Reduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
-    if (r==0){
-        buildTensor655(d_weight, result);
-    }
+    MPI_Allreduce(placeHolder, result, S, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    buildTensor655(d_weight, result);
 }
 
 
 void bp_bias_c1(float bias[6], const float d_preact[6][24][24]) {
-    float accumulators[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-
-    float d = 24.0f * 24.0f; 
-    
     int p;
     MPI_Comm_size(MPI_COMM_WORLD, &p);
-
     int r;
     MPI_Comm_rank(MPI_COMM_WORLD, &r);
-
-    int S = 6;
-    float placeHolder[S];
-
-    int it = ceil(S/(float)p);
-    int start = r * it;
-    int end = Min(r * (it + 1), S);
-
-    for (int i =0 ; i < S; i++){
-        placeHolder[i] = 0;
-    }
+    float gradients[6] = {0}, total[6];
+    int terms = 6 * 24 * 24;
+    int it = ceil(terms / (float)p);
+    int start = r * it, end = Min(start + it, terms);
 
     for (int i = start; i < end; ++i) {
         int m = i / (24 * 24);
-        int j = (i / 24) % 24;
-        int k = i % 24;
-        accumulators[i] += d_preact[m][j][k];
+        int pixel = i % (24 * 24);
+        gradients[m] += d_preact[m][pixel / 24][pixel % 24];
     }
-    for (int i =0 ; i < S; i++){
-        placeHolder[i] += dt * accumulators[i] / d;
-    }
-    
-    MPI_Reduce(placeHolder, bias, S, MPI_FLOAT, MPI_SUM, 0, MPI_COMM_WORLD);
+    MPI_Allreduce(gradients, total, 6, MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+    for (int i = 0; i < 6; ++i) bias[i] += dt * total[i] / (24.0f * 24.0f);
 }
+
+#endif /* LAYER_H */

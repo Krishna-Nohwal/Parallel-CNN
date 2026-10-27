@@ -180,6 +180,8 @@ static unsigned int classify(double data[28][28]) {
 static void test()
 {
 	int error = 0;
+	int rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
 	for (int i = 0; i < test_cnt; ++i) {
 		if (classify(test_set[i].data) != test_set[i].label) {
@@ -187,6 +189,7 @@ static void test()
 		}
 	}
 
-	fprintf(stdout, "Error Rate: %.2lf%%\n",
-		(double)error / (double)test_cnt * 100.0);
+	if (rank == 0)
+		fprintf(stdout, "Error Rate: %.2lf%%\n",
+			(double)error / (double)test_cnt * 100.0);
 }

@@ -47,6 +47,7 @@ int main(int argc, const  char **argv)
 		return 1;
 	}
     loaddata();
+    fprintf(stdout, "Dataset: %u training images, %u test images\n", train_cnt, test_cnt);
     learn();
     test();
 
@@ -169,10 +170,13 @@ static void learn()
 
 	float err;
 	int iter = 1;
+	unsigned int progress_step = train_cnt / 20;
+	if (progress_step == 0) progress_step = 1;
 	
 	double time_taken = 0.0;
 
 	fprintf(stdout ,"Learning\n");
+	fprintf(stdout, "Training images: %u | batch size: 1 | batches per epoch: %u\n", train_cnt, train_cnt);
 
 	while (iter < 0 || iter-- > 0) {
 		err = 0.0f;
@@ -192,6 +196,12 @@ static void learn()
 			err += tmp_err;
 
 			time_taken += back_pass();
+			unsigned int done = (unsigned int)i + 1;
+			if (done % progress_step == 0 || done == train_cnt) {
+				cudaDeviceSynchronize();
+				fprintf(stdout, "Epoch 1/1: %u/%u batches (%u%%)\n", done, train_cnt, done * 100 / train_cnt);
+				fflush(stdout);
+			}
 		}
 
 		err /= train_cnt;

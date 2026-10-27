@@ -1,82 +1,61 @@
-#include <cstdlib>
-#include <vector>
-#include <memory>
-#include <cmath>
-#include <cstdlib>
-#include <cstring>
-#include<omp.h>
+#include <stdlib.h>
+#include <math.h>
+#include <string.h>
+#include <omp.h>
 
 #ifndef LAYER_H
 #define LAYER_H
-#endif
 
 const static float dt = 1.0E-01f;
 const static float threshold = 1.0E-02f;
 
-class Layer {
-	public:
-	int M, N, O;
+typedef struct Layer {
+    int M, N, O;
+    float *output, *preact, *bias, *weight;
+    float *d_output, *d_preact, *d_weight;
+} Layer;
 
-	float *output;
-	float *preact;
-
-	float *bias;
-	float *weight;
-
-	float *d_output;
-	float *d_preact;
-	float *d_weight;
-
-	Layer(int M, int N, int O);
-
-	~Layer();
-
-	void setOutput(float *data);
-	void clear();
-	void bp_clear();
-};
-
-// Constructor
-Layer::Layer(int M, int N, int O) : M(M), N(N), O(O) {
-    output = new float[O]();
-    preact = new float[O]();
-    bias = new float[N]();
-    weight = new float[M * N]();
-    d_output = new float[O]();
-    d_preact = new float[O]();
-    d_weight = new float[M * N]();
-
+static void layer_init(Layer *layer, int M, int N, int O) {
+    layer->M = M;
+    layer->N = N;
+    layer->O = O;
+    layer->output = (float *)calloc((size_t)O, sizeof(float));
+    layer->preact = (float *)calloc((size_t)O, sizeof(float));
+    layer->bias = (float *)calloc((size_t)N, sizeof(float));
+    layer->weight = (float *)calloc((size_t)M * (size_t)N, sizeof(float));
+    layer->d_output = (float *)calloc((size_t)O, sizeof(float));
+    layer->d_preact = (float *)calloc((size_t)O, sizeof(float));
+    layer->d_weight = (float *)calloc((size_t)M * (size_t)N, sizeof(float));
     for (int i = 0; i < N; ++i) {
-        bias[i] = 0.5f - static_cast<float>(rand()) / RAND_MAX;
+        layer->bias[i] = 0.5f - (float)rand() / RAND_MAX;
 
         for (int j = 0; j < M; ++j) {
-            weight[i * M + j] = 0.5f - static_cast<float>(rand()) / RAND_MAX;
+            layer->weight[i * M + j] = 0.5f - (float)rand() / RAND_MAX;
         }
     }
 }
 
-// Destructor
-Layer::~Layer() {
-    delete[] output;
-    delete[] preact;
-    delete[] bias;
-    delete[] weight;
-    delete[] d_output;
-    delete[] d_preact;
-    delete[] d_weight;
+static void layer_destroy(Layer *layer) {
+    free(layer->output);
+    free(layer->preact);
+    free(layer->bias);
+    free(layer->weight);
+    free(layer->d_output);
+    free(layer->d_preact);
+    free(layer->d_weight);
 }
 
-void Layer::setOutput(float *data) {
-    memcpy(output, data, sizeof(float) * O);
+static void layer_set_output(Layer *layer, const float *data) {
+    memcpy(layer->output, data, sizeof(float) * (size_t)layer->O);
 }
 
-void Layer::clear() {
-    memset(output, 0, sizeof(float) * O);
-    memset(preact, 0, sizeof(float) * O);
+static void layer_clear(Layer *layer) {
+    memset(layer->output, 0, sizeof(float) * (size_t)layer->O);
+    memset(layer->preact, 0, sizeof(float) * (size_t)layer->O);
 }
 
-void Layer::bp_clear() {
-    memset(d_weight, 0, sizeof(float) * M * N);
+static void layer_bp_clear(Layer *layer) {
+    memset(layer->d_weight, 0, sizeof(float) * (size_t)layer->M * (size_t)layer->N);
 }
 
 float step_function(float v) {
@@ -97,7 +76,6 @@ void makeError(float *err, float *output, unsigned int Y, int N) {
     }
 }
 
-// Parallelize the gradient application in apply_grad
 void apply_grad(float *output, float *grad, int N) {
     #pragma omp parallel for
     for (int i = 0; i < N; ++i) {
@@ -356,24 +334,18 @@ void bp_output_c1(float d_output[6][24][24], const float n_weight[1][4][4], cons
     }
 }
 
-void bp_preact_c1(float d_preact[6][24][24], const float d_output[6][24][24], const float preact[6][24][24]) {
-    // Assume step_function is a sigmoid activation function
-    auto sigmoid = [](float x) {
-        return 1.0f / (1.0f + exp(-x));
-    };
+static float sigmoid_derivative(float x) {
+    float s = step_function(x);
+    return s * (1.0f - s);
+}
 
-    // Assume the derivative of the sigmoid function
-    auto sigmoid_derivative = [](float x) {
-        float s = 1.0f / (1.0f + exp(-x));
-        return s * (1 - s);
-    };
+void bp_preact_c1(float d_preact[6][24][24], const float d_output[6][24][24], const float preact[6][24][24]) {
 
     // Compute the gradient of pre-activation for each element
     #pragma omp parallel for collapse(3)
     for (int i = 0; i < 6; ++i) {
         for (int j = 0; j < 24; ++j) {
             for (int k = 0; k < 24; ++k) {
-                float o = sigmoid(preact[i][j][k]);
                 d_preact[i][j][k] = d_output[i][j][k] * sigmoid_derivative(preact[i][j][k]);
             }
         }
@@ -430,3 +402,5 @@ void bp_bias_c1(float bias[6], const float d_preact[6][24][24]) {
         bias[i] += dt * accumulators[i] / d;
     }
 }
+
+#endif /* LAYER_H */

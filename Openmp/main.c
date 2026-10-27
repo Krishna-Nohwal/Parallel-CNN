@@ -2,21 +2,16 @@
 #define MNIST_DOUBLE
 #include "mnist.h" 
 #include "layer.h"
-#include <cstdio>
-#include <ctime>
-#include <vector>
-#include <cmath>
-#include <memory>
+#include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 #include <time.h>
     
 static mnist_data *train_set, *test_set;
 static unsigned int train_cnt, test_cnt;
 
 // Define layers of CNN
-static Layer l_input(0, 0, 28*28);
-static Layer l_c1(5*5, 6, 24*24*6);
-static Layer l_s1(4*4, 1, 6*6*6);
-static Layer l_f(6*6*6, 10, 10);
+static Layer l_input, l_c1, l_s1, l_f;
 
 static void learn();
 static unsigned int classify(double data[28][28]);
@@ -24,7 +19,7 @@ static void test();
 static double forward_pass(double data[28][28]);
 static double back_pass();
 
-float vectorNorm(float* vec, int n) {
+static float vector_norm(const float *vec, int n) {
     float sum = 0.0f;
     for (int i = 0; i < n; ++i) {
         sum += vec[i] * vec[i];
@@ -40,13 +35,20 @@ static inline void loaddata()
 		&test_set, &test_cnt);
 }
 
-int main(int argc, const char **argv) {
-    
+int main(void) {
     srand(time(NULL));
+    layer_init(&l_input, 0, 0, 28*28);
+    layer_init(&l_c1, 5*5, 6, 24*24*6);
+    layer_init(&l_s1, 4*4, 1, 6*6*6);
+    layer_init(&l_f, 6*6*6, 10, 10);
     loaddata();
+    fprintf(stdout, "Dataset: %u training images, %u test images\n", train_cnt, test_cnt);
     learn();
     test();
-
+    layer_destroy(&l_input);
+    layer_destroy(&l_c1);
+    layer_destroy(&l_s1);
+    layer_destroy(&l_f);
     return 0;
 }
 
@@ -59,15 +61,15 @@ static double forward_pass(double data[28][28]) {
 		}
 	}
 
-	l_input.clear();
-	l_c1.clear();
-	l_s1.clear();
-	l_f.clear();
+    layer_clear(&l_input);
+    layer_clear(&l_c1);
+    layer_clear(&l_s1);
+    layer_clear(&l_f);
     clock_t start_1, end_1;
     start_1=clock();
 	
 
-	l_input.setOutput((float *)input);
+    layer_set_output(&l_input, (float *)input);
 	 // forward pass Convolution Layer
     fp_c1((float (*)[28])l_input.output, (float (*)[24][24])l_c1.preact, (float (*)[5][5])l_c1.weight,l_c1.bias);
     apply_step_function(l_c1.preact, l_c1.output, l_c1.O);
@@ -114,10 +116,13 @@ end_1= clock();
 static void learn() {
     float err;
 	int iter = 1;
+	unsigned int progress_step = train_cnt / 20;
+	if (progress_step == 0) progress_step = 1;
 	
 	double time_taken = 0.0;
 
 	fprintf(stdout ,"Learning\n");
+	fprintf(stdout, "Training images: %u | batch size: 1 | batches per epoch: %u\n", train_cnt, train_cnt);
 
 	while (iter < 0 || iter-- > 0) {
 		err = 0.0f;
@@ -127,15 +132,18 @@ static void learn() {
 
 			time_taken += forward_pass(train_set[i].data);
 
-			l_f.bp_clear();
-			l_s1.bp_clear();
-			l_c1.bp_clear();
+            layer_bp_clear(&l_f);
+            layer_bp_clear(&l_s1);
+            layer_bp_clear(&l_c1);
 
             // Euclid distance of train_set[i]
     makeError(l_f.d_preact, l_f.output, train_set[i].label, 10);
-            tmp_err = vectorNorm(l_f.d_preact, 10);
+            tmp_err = vector_norm(l_f.d_preact, 10);
             err += tmp_err;
            time_taken += back_pass();
+            unsigned int done = (unsigned int)i + 1;
+            if (done % progress_step == 0 || done == train_cnt)
+                fprintf(stdout, "Epoch 1/1: %u/%u batches (%u%%)\n", done, train_cnt, done * 100 / train_cnt);
         }
 
         err /= train_cnt;
@@ -152,14 +160,10 @@ static void learn() {
 }
 
 static unsigned int classify(double data[28][28]) {
-    float res[10];
     forward_pass(data);
     unsigned int max = 0;
-   for (int i = 0; i < 10; i++) {
-        res[i] = l_f.output[i];
-    }
     for (int i = 1; i < 10; ++i) {
-        if (res[max] < res[i]) {
+        if (l_f.output[max] < l_f.output[i]) {
             max = i;
         }
     }
@@ -178,5 +182,5 @@ static void test()
 	}
 
 	fprintf(stdout, "Error Rate: %.2lf%%\n",
-		double(error) / double(test_cnt) * 100.0);
+		(double)error / (double)test_cnt * 100.0);
 }

@@ -5,6 +5,7 @@
 
 #include <cuda.h>
 #include <cstdio>
+#include <cstdlib>
 #include <math.h>
 #include <time.h>
 #include <cuda_runtime.h>
@@ -29,6 +30,14 @@ struct KernelConfig {
     dim3 blocks;
     dim3 threads;
 };
+
+static void check_cuda(cudaError_t status, const char *operation)
+{
+    if (status != cudaSuccess) {
+        fprintf(stderr, "CUDA error in %s: %s\n", operation, cudaGetErrorString(status));
+        exit(EXIT_FAILURE);
+    }
+}
 
 static inline void loaddata()
 {
@@ -101,6 +110,7 @@ KernelConfig configSubsample1 = {
 fp_f<<<configFullyConnected.blocks, configFullyConnected.threads>>>((float (*)[6][6])l_s1.output, l_f.preact, (float (*)[6][6][6])l_f.weight,l_f.bias);
 apply_step_function<<<1, 10>>>(l_f.preact, l_f.output, l_f.O);
   
+	check_cuda(cudaDeviceSynchronize(), "forward pass");
 	end = clock();
 	return ((double) (end - start)) / CLOCKS_PER_SEC;
 
@@ -161,6 +171,7 @@ static void learn()
 {
 	float err;
 	int iter = 1;
+	bool showed_zero_error = false;
 	unsigned int progress_step = train_cnt / 20;
 	if (progress_step == 0) progress_step = 1;
 	
@@ -183,11 +194,20 @@ static void learn()
 
 			// Euclid distance of train_set[i]
 			makeError<<<10, 1>>>(l_f.d_preact, l_f.output, train_set[i].label, 10);
+			check_cuda(cudaGetLastError(), "makeError launch");
 			float residual[10];
-			cudaMemcpy(residual, l_f.d_preact, sizeof(residual), cudaMemcpyDeviceToHost);
+			check_cuda(cudaMemcpy(residual, l_f.d_preact, sizeof(residual), cudaMemcpyDeviceToHost), "copying training error");
 			tmp_err = 0.0f;
 			for (int j = 0; j < 10; ++j) tmp_err += residual[j] * residual[j];
 			tmp_err = sqrtf(tmp_err);
+			if (tmp_err == 0.0f && !showed_zero_error) {
+				float output[10];
+				check_cuda(cudaMemcpy(output, l_f.output, sizeof(output), cudaMemcpyDeviceToHost), "checking first zero error");
+				fprintf(stderr, "Zero training error: label=%u, output=", train_set[i].label);
+				for (int j = 0; j < 10; ++j) fprintf(stderr, " %.6f", output[j]);
+				fputc('\n', stderr);
+				showed_zero_error = true;
+			}
 			err += tmp_err;
 
 			time_taken += back_pass();
@@ -222,7 +242,7 @@ static unsigned int classify(double data[28][28])
 
 	unsigned int max = 0;
 
-	cudaMemcpy(res, l_f.output, sizeof(float) * 10, cudaMemcpyDeviceToHost);
+	check_cuda(cudaMemcpy(res, l_f.output, sizeof(float) * 10, cudaMemcpyDeviceToHost), "copying classification output");
 
 	for (int i = 1; i < 10; ++i) {
 		if (res[max] < res[i]) {

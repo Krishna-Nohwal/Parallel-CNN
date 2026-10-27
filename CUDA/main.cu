@@ -5,6 +5,7 @@
 
 #include <cuda.h>
 #include <cstdio>
+#include <math.h>
 #include <time.h>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
@@ -87,11 +88,6 @@ KernelConfig configSubsample1 = {
     dim3((6 + 2 - 1) / 2, (6 + 2 - 1) / 2, 6), // Grid size, rounding up if not a perfect multiple
     dim3(2, 2, 1)  // Block size
 };
-	KernelConfig configBiasS1 = {
-    dim3(2, 2, 2), // Blocks
-    dim3(3, 3, 3)  // Threads per block
-};
-
 	fp_s1<<<configSubsample1.blocks, configSubsample1.threads>>>((float (*)[24][24])l_c1.output, (float (*)[6][6])l_s1.preact, (float (*)[4][4])l_s1.weight,l_s1.bias);
 
 	apply_step_function<<<configSubsample1.blocks, configSubsample1.threads>>>(l_s1.preact, l_s1.output, l_s1.O);
@@ -123,16 +119,14 @@ int gridSize = (numOutputs + blockSize - 1) / blockSize;
 	
 bp_f<<<gridSize, blockSize>>>((float (*)[6][6][6])l_f.d_weight,l_f.bias, l_f.d_preact, (float (*)[6][6])l_s1.output);
  
-  bp_output_s1<<<5,(216 + 5 - 1) / 5>>>((float (*)[6][6])l_s1.d_output, (float (*)[6][6][6])l_f.weight, l_f.d_preact);
+	bp_output_s1<<<1, 256>>>((float (*)[6][6])l_s1.d_output, (float (*)[6][6][6])l_f.weight, l_f.d_preact);
 	dim3 threadsPerBlock_s1(6, 6, 6); // One thread for each element in the 6x6x6 block
 dim3 numBlocks_s1(1, 1, 1);
 	bp_preact_s1<<<numBlocks_s1, threadsPerBlock_s1>>>((float (*)[6][6])l_s1.d_preact, (float (*)[6][6])l_s1.d_output, (float (*)[6][6])l_s1.preact);
 	dim3 threadsPerBlock_w_s1(4, 4); // Perfect fit for 4x4 kernel weight dimensions
 dim3 numBlocks_w_s1(1, 1);
 	bp_weight_s1<<<numBlocks_w_s1, threadsPerBlock_w_s1>>>((float (*)[4][4])l_s1.d_weight, (float (*)[6][6])l_s1.d_preact, (float (*)[24][24])l_c1.output);
-	int totalThreads=6*6*6;
-	int numBlocks = (totalThreads + 256 - 1);
-	bp_bias_s1<<<numBlocks, 256>>>(l_s1.bias, (float (*)[6][6])l_s1.d_preact);
+	bp_bias_s1<<<1, 256>>>(l_s1.bias, (float (*)[6][6])l_s1.d_preact);
     
 		
 dim3 threadsPerBlock_output_c1(8,8 );  // 4x4 threads to handle the 4x4 weight matrix
@@ -165,9 +159,6 @@ dim3 threads_bias_c1(16, 16);
 
 static void learn()
 {
-	static cublasHandle_t blas;
-	cublasCreate(&blas);
-
 	float err;
 	int iter = 1;
 	unsigned int progress_step = train_cnt / 20;
@@ -192,7 +183,11 @@ static void learn()
 
 			// Euclid distance of train_set[i]
 			makeError<<<10, 1>>>(l_f.d_preact, l_f.output, train_set[i].label, 10);
-			cublasSnrm2(blas, 10, l_f.d_preact, 1, &tmp_err);
+			float residual[10];
+			cudaMemcpy(residual, l_f.d_preact, sizeof(residual), cudaMemcpyDeviceToHost);
+			tmp_err = 0.0f;
+			for (int j = 0; j < 10; ++j) tmp_err += residual[j] * residual[j];
+			tmp_err = sqrtf(tmp_err);
 			err += tmp_err;
 
 			time_taken += back_pass();

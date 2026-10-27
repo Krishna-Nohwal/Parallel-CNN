@@ -84,8 +84,10 @@ __device__ float step_function(float v)
 
 __global__ void apply_step_function(float *input, float *output, const int N)
 {
-    const int total_threads = blockDim.x * gridDim.x;
-    const int thread_id = blockIdx.x * blockDim.x + threadIdx.x;
+    const int threads_per_block = blockDim.x * blockDim.y * blockDim.z;
+    const int total_threads = threads_per_block * gridDim.x * gridDim.y * gridDim.z;
+    const int thread_id = ((blockIdx.z * gridDim.y + blockIdx.y) * gridDim.x + blockIdx.x)
+        * threads_per_block + (threadIdx.z * blockDim.y + threadIdx.y) * blockDim.x + threadIdx.x;
 
     // Each thread processes elements spaced by the total number of threads
     for (int idx = thread_id; idx < N; idx += total_threads) {
@@ -95,7 +97,7 @@ __global__ void apply_step_function(float *input, float *output, const int N)
 
 
 __global__ void makeError(float *err, float *output, unsigned int Y, const int N)
-{float dt = 1.0E-01f;
+{
 	const int pos = blockIdx.x * blockDim.x + threadIdx.x;
 	const int size = blockDim.x * gridDim.x;
 
@@ -159,8 +161,7 @@ __global__ void fp_f(float input[6][6][6], float preact[10], float weight[10][6]
                 }
             }
         }
-        atomicAdd(&preact[o], sum); // Atomically add the sum to the output to avoid write conflicts
-        preact[o] += bias[o]; // Add bias to each element
+        preact[o] = sum + bias[o];
     }
 }
 
@@ -254,14 +255,12 @@ __global__ void bp_weight_s1(float d_weight[1][4][4], float d_preact[6][6][6],fl
 
 
 __global__ void bp_bias_s1(float bias[1], float d_preact[6][6][6]) {
-    // Assuming a grid of blocks where each thread can access a unique index
-    int i = blockIdx.x;
-    int j = blockIdx.y;
-    int k = threadIdx.x;
-
-    // Ensure only valid threads in bounds do work
-    if (i < 6 && j < 6 && k < 6) {
-        atomicAdd(&bias[0], d_preact[i][j][k]);
+    int index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < 6 * 6 * 6) {
+        int i = index / 36;
+        int j = (index / 6) % 6;
+        int k = index % 6;
+        atomicAdd(&bias[0], 0.1f * d_preact[i][j][k] / (6.0f * 6.0f * 6.0f));
     }
 }
 

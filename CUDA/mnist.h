@@ -91,28 +91,30 @@ _STATIC int mnist_load(
 
 	FILE *ifp = fopen(image_filename, "rb");
 	FILE *lfp = fopen(label_filename, "rb");
+	*data = NULL;
+	*count = 0;
 
 	if (!ifp || !lfp) {
 		return_code = -1; /* No such files */
 		goto cleanup;
 	}
 
-	fread(tmp, 1, 4, ifp);
+	if (fread(tmp, 1, 4, ifp) != 4) { return_code = -5; goto cleanup; }
 	if (mnist_bin_to_int(tmp) != 2051) {
 		return_code = -2; /* Not a valid image file */
 		goto cleanup;
 	}
 
-	fread(tmp, 1, 4, lfp);
+	if (fread(tmp, 1, 4, lfp) != 4) { return_code = -5; goto cleanup; }
 	if (mnist_bin_to_int(tmp) != 2049) {
 		return_code = -3; /* Not a valid label file */
 		goto cleanup;
 	}
 
-	fread(tmp, 1, 4, ifp);
+	if (fread(tmp, 1, 4, ifp) != 4) { return_code = -5; goto cleanup; }
 	image_cnt = mnist_bin_to_int(tmp);
 
-	fread(tmp, 1, 4, lfp);
+	if (fread(tmp, 1, 4, lfp) != 4) { return_code = -5; goto cleanup; }
 	label_cnt = mnist_bin_to_int(tmp);
 
 	if (image_cnt != label_cnt) {
@@ -121,7 +123,7 @@ _STATIC int mnist_load(
 	}
 
 	for (i = 0; i < 2; ++i) {
-		fread(tmp, 1, 4, ifp);
+		if (fread(tmp, 1, 4, ifp) != 4) { return_code = -5; goto cleanup; }
 		image_dim[i] = mnist_bin_to_int(tmp);
 	}
 
@@ -138,7 +140,7 @@ _STATIC int mnist_load(
 		unsigned char read_data[28 * 28];
 		mnist_data *d = &(*data)[i];
 
-		fread(read_data, 1, 28*28, ifp);
+		if (fread(read_data, 1, 28*28, ifp) != 28*28) { return_code = -5; goto cleanup; }
 
 #ifdef MNIST_DOUBLE
 		for (j = 0; j < 28*28; ++j) {
@@ -148,11 +150,16 @@ _STATIC int mnist_load(
 		memcpy(d->data, read_data, 28*28);
 #endif
 
-		fread(tmp, 1, 1, lfp);
+		if (fread(tmp, 1, 1, lfp) != 1) { return_code = -5; goto cleanup; }
 		d->label = tmp[0];
 	}
 
 cleanup:
+	if (return_code && *data) {
+		free(*data);
+		*data = NULL;
+		*count = 0;
+	}
 	if (ifp) fclose(ifp);
 	if (lfp) fclose(lfp);
 

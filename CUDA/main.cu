@@ -193,21 +193,22 @@ static void learn()
 			l_c1.bp_clear();
 
 			// Euclid distance of train_set[i]
-			makeError<<<10, 1>>>(l_f.d_preact, l_f.output, train_set[i].label, 10);
-			check_cuda(cudaGetLastError(), "makeError launch");
+			float output[10];
 			float residual[10];
-			check_cuda(cudaMemcpy(residual, l_f.d_preact, sizeof(residual), cudaMemcpyDeviceToHost), "copying training error");
+			check_cuda(cudaMemcpy(output, l_f.output, sizeof(output), cudaMemcpyDeviceToHost), "copying training output");
 			tmp_err = 0.0f;
-			for (int j = 0; j < 10; ++j) tmp_err += residual[j] * residual[j];
+			for (int j = 0; j < 10; ++j) {
+				residual[j] = (j == train_set[i].label ? 1.0f : 0.0f) - output[j];
+				tmp_err += residual[j] * residual[j];
+			}
 			tmp_err = sqrtf(tmp_err);
 			if (tmp_err == 0.0f && !showed_zero_error) {
-				float output[10];
-				check_cuda(cudaMemcpy(output, l_f.output, sizeof(output), cudaMemcpyDeviceToHost), "checking first zero error");
 				fprintf(stderr, "Zero training error: label=%u, output=", train_set[i].label);
 				for (int j = 0; j < 10; ++j) fprintf(stderr, " %.6f", output[j]);
 				fputc('\n', stderr);
 				showed_zero_error = true;
 			}
+			check_cuda(cudaMemcpy(l_f.d_preact, residual, sizeof(residual), cudaMemcpyHostToDevice), "copying training residual");
 			err += tmp_err;
 
 			time_taken += back_pass();
